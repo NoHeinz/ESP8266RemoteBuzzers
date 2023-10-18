@@ -19,7 +19,7 @@ RF24 radio(D3, D2); // CE, CSN
 #define FLASH_PERIOD_ON_LENGTH   50
 
 // ButtonStatus options(Disabled = led off/button disabled, Enabled = led on/button enabled, Answered = led on(after flashing sequence)/button enabled)
-enum ButtonStatus : unsigned char { Disabled = 0, Enabled = 1, Answered = 2 };
+enum ButtonStatus : unsigned char { Disabled = 0, Enabled = 1, Answered = 2,  Flashing = 3};
 
 // Last loop start time
 unsigned long lastLoopTime = 0;
@@ -41,7 +41,7 @@ void setup() {
   pinMode(PIN_LED, OUTPUT);
   Serial.begin(57600);
   while (!Serial) {};
-  buttonNumber = 2; //change this to current number
+  buttonNumber = 1; //change this to current number
   // Setup the radio device
   if (!radio.begin()) {
     Serial.write("RF24 device failed to begin\n");

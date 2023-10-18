@@ -21,7 +21,7 @@ RF24 radio(D3, D2); // CE, CSN
 
 
 // ButtonStatus type
-enum ButtonStatus : unsigned char { Disabled = 0, Enabled = 1, Answered = 2 };
+enum ButtonStatus : unsigned char { Disabled = 0, Enabled = 1, Answered = 2,  Flashing = 3};
 
 // Status we want to share with the buttons
 ButtonStatus buttonStatus[2]  = {Disabled, Disabled};
