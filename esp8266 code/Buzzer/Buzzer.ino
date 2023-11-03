@@ -11,20 +11,21 @@
 
 RF24 radio(D3, D2); // CE, CSN
 
-#define PIN_BUTTON   D8
-#define PIN_LED      LED_BUILTIN
+#define PIN_BUTTON   D1
+#define PIN_LED      D4
 #define COM_TIMEOUT  1000
 #define ANSWERED_FLASHING_DURATION   2500
 #define FLASH_PERIOD_LENGTH   100
 #define FLASH_PERIOD_ON_LENGTH   50
 
 // ButtonStatus options(Disabled = led off/button disabled, Enabled = led on/button enabled, Answered = led on(after flashing sequence)/button enabled)
-enum ButtonStatus : unsigned char { Disabled = 0, Enabled = 1, Answered = 2,  Flashing = 3};
+enum ButtonStatus : char {Disabled = 0x44, Enabled = 0x45, Answered = 0x41};
 
 // Last loop start time
 unsigned long lastLoopTime = 0;
 // If this is in contact with the controller
 bool isConnected = false;
+
 // Last time we sent some status
 unsigned long lastStatusSend = 0;
 // When the button was pressed down
@@ -41,7 +42,7 @@ void setup() {
   pinMode(PIN_LED, OUTPUT);
   Serial.begin(57600);
   while (!Serial) {};
-  buttonNumber = 1; //change this to current number
+  buttonNumber = 2; //change this to current number
   // Setup the radio device
   if (!radio.begin()) {
     Serial.write("RF24 device failed to begin\n");
@@ -104,13 +105,13 @@ bool sendButtonStatus(bool isDown) {
     unsigned int randomDelayAmount = random(1,retries);
     if (radio.write(&message, 1)) {
       if (radio.available()) { //Test whether there are bytes available to be read.
-       if (radio.getDynamicPayloadSize() == 2) {
-          unsigned char tmp[2];
-          radio.read(&tmp, 2);
+       if (radio.getDynamicPayloadSize() == 4) {
+          unsigned char tmp[4];
+          radio.read(&tmp, 4);
           buttonState = (ButtonStatus)(tmp[buttonNumber-1]);
           return true;          
         } else {
-          // Remove redundant data
+          // Remove redundant data from nrf buffer
           int total = radio.getDynamicPayloadSize();
           unsigned char tmp;
           while (total-- > 0) radio.read(&tmp, 1);
@@ -118,7 +119,7 @@ bool sendButtonStatus(bool isDown) {
           delay(randomDelayAmount);
         }
       } else {
-          // Write ack recieve, but no custom ack recieved
+          // Write ack recieve/, but no custom ack recieved
           Serial.write("\nWrite OK, no ACK\n");
           return true;
       }
@@ -135,6 +136,9 @@ bool sendButtonStatus(bool isDown) {
 // Main loop
 void loop() {
   lastLoopTime = millis();
+  if (digitalRead(PIN_BUTTON) == HIGH){
+    Serial.write("button_down,\n");
+  }
   if (radio.isChipConnected()) {
 
     // If COM_TIMEOUT reached or not connected
@@ -162,15 +166,15 @@ void loop() {
 
     //LED controll logic
     if (buttonState == Enabled){//On while answering
-      digitalWrite(PIN_LED,LOW);
+      digitalWrite(PIN_LED,HIGH);
     }else if (buttonState == Answered) {//flashing during time period after answering
       if (lastLoopTime - buttonPressTime<ANSWERED_FLASHING_DURATION){
         digitalWrite(PIN_LED,((lastLoopTime & FLASH_PERIOD_LENGTH)>FLASH_PERIOD_ON_LENGTH));
       }else{//On whenever else
-        digitalWrite(PIN_LED,LOW);
+        digitalWrite(PIN_LED,HIGH);
       }
     }else{//led of when disabled
-      digitalWrite(PIN_LED,HIGH);
+      digitalWrite(PIN_LED,LOW);
     }
 
   } else {

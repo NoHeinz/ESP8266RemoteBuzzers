@@ -14,24 +14,22 @@
 RF24 radio(D3, D2); // CE, CSN
 
 #define LED_STATUS      LED_BUILTIN     // Status LED
-#define BTN_RESET       D1
-#define BTN_READY       D8
-
+#define SERIAL_UPDATE_RATE 500
 
 
 
 // ButtonStatus type
-enum ButtonStatus : unsigned char { Disabled = 0, Enabled = 1, Answered = 2,  Flashing = 3};
+enum ButtonStatus : char { Disabled = 0x44, Enabled = 0x45, Answered = 0x41};
 
 // Status we want to share with the buttons
-ButtonStatus buttonStatus[2]  = {Disabled, Disabled};
-bool buttonConnected[2] = {false, false};
-bool hasAnswered[2]     = {false, false};
-unsigned long lastContact[2] = {0, 0};
+ButtonStatus buttonStatus[4]  = {Disabled, Disabled, Disabled, Disabled};
+bool buttonConnected[4] = {false, false, false, false};
+bool hasAnswered[4]     = {false, false, false, false};
+unsigned long lastContact[4] = {0, 0, 0, 0};
 
 // Last loop time
 unsigned long lastLoopTime = 0;
-
+unsigned long lastSerialSendTime;
 // System status
 bool isReady = false;
 
@@ -67,10 +65,10 @@ bool findEmptyChannel() {
 // Sends a new ACK payload to the transmitter
 void setupACKPayload() {
   // Update the ACK for the next payload, prevents radio from stalling waiting on ack payload
-  unsigned char payload[2];
-  for (unsigned char button=0; button<2; button++)
+  unsigned char payload[4];
+  for (unsigned char button=0; button<4; button++)
       payload[button] = buttonStatus[button];
-  radio.writeAckPayload(1, &payload, 2);
+  radio.writeAckPayload(1, &payload, 4);
 }
 
 // Check for messages from the buttons
@@ -82,7 +80,7 @@ void checkRadioMessageReceived() {
 
     // Grab the button number from the data
     unsigned char buttonNumber = buffer & 0x7F; // Get the button number
-    if ((buttonNumber >= 1) && (buttonNumber <= 2)) {
+    if ((buttonNumber >= 1) && (buttonNumber <= 4)) {
       buttonNumber--; //zero index
 
       // Update the last contact time for this button
@@ -100,7 +98,7 @@ void checkRadioMessageReceived() {
         hasAnswered[buttonNumber] = true;
 
         // Change button status
-        for (unsigned char btn = 0; btn < 2; btn++)
+        for (unsigned char btn = 0; btn < 4; btn++)
           buttonStatus[btn] = Disabled;
         buttonStatus[buttonNumber] = Answered;
 
@@ -129,10 +127,6 @@ void setup() {
 
   // Setup our I/O
   pinMode(LED_STATUS, OUTPUT);
-  pinMode(BTN_RESET, INPUT_PULLUP);
-  pinMode(BTN_READY, INPUT_PULLUP);
-
-
   if (!radio.isChipConnected()) {
     Serial.write("RF24 device not detected.\n");
   } else {
@@ -166,27 +160,34 @@ void setup() {
 // Main loop
 void loop() {
   lastLoopTime = millis();
-
-
-  if (digitalRead(BTN_RESET) == HIGH) {                 // Reset button pressed
-    // Turn all buttons off, Reset the hasAnswered statuses
-    for (unsigned char button = 0; button < 2; button++) {
-      buttonStatus[button] = Disabled;
-      hasAnswered[button] = false;
+  while (Serial.available() > 0){
+    char inByte = Serial.read();
+    if (inByte == 0x31) {                 // Reset button pressed
+      // Turn all buttons off, Reset the hasAnswered statuses
+      for (unsigned char button = 0; button < 4; button++) {
+        buttonStatus[button] = Disabled;
+        hasAnswered[button] = false;
+      }
+      isReady = false;
+      digitalWrite(LED_STATUS, LOW);
+    } else if (inByte == 0x32) {                // Ready button pressed
+      // Make the buttons Enabled that haven't answered yet
+      for (unsigned char button = 0; button < 4; button++) {
+        buttonStatus[button] = hasAnswered[button] ? Disabled : Enabled;
+      }
+      isReady = true;
+      digitalWrite(LED_STATUS, HIGH);
+    } else if (inByte == 0x33) {                // disable button pressed
+      // Make the buttons Enabled that haven't answered yet
+      for (unsigned char button = 0; button < 4; button++) {
+        buttonStatus[button] = Disabled;
+      }
+      isReady = false;
+      digitalWrite(LED_STATUS, LOW);
     }
-    isReady = false;
-    digitalWrite(LED_STATUS, LOW);
-  } else if (digitalRead(BTN_READY) == HIGH) {                // Ready button pressed
-    // Make the buttons Enabled that haven't answered yet
-    for (unsigned char button = 0; button < 2; button++) {
-      buttonStatus[button] = hasAnswered[button] ? Disabled : Enabled;
-    }
-    isReady = true;
-    digitalWrite(LED_STATUS, HIGH);
   }
-
   // monitor for Buttons that are out of contact
-  for (unsigned char button = 0; button < 2; button++) {
+  for (unsigned char button = 0; button < 4; button++) {
     // If the button is connected
     if (buttonConnected[button]) {
       // If its been 1 second since we heard from it
@@ -196,6 +197,17 @@ void loop() {
         buttonConnected[button] = false;
       } 
     } 
+  }
+  if (lastLoopTime - lastSerialSendTime > SERIAL_UPDATE_RATE){
+      char payload[4];
+      for (unsigned char button=0; button<4; button++){
+        payload[button] = buttonStatus[button]  ;
+        if (buttonConnected[button]) payload[button] |= 0x80;
+      }
+      if (Serial.availableForWrite()>4){
+        Serial.write(payload);
+        lastSerialSendTime = lastLoopTime;
+      }
   }
   checkRadioMessageReceived();//recieve button data and send button statuses
 }
